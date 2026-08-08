@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/caerus-framework/caerus-framework v0.0.5
-	github.com/caerus-framework/caerus-framework-logs v0.1.0
+	github.com/caerus-framework/caerus-framework-logs v0.0.1
 	github.com/fsnotify/fsnotify v1.9.0
 	gopkg.in/yaml.v3 v3.0.1
 )
