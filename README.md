@@ -266,7 +266,7 @@ Implements `caerusframework.CaerusComponent`:
   `WithLogger(*slog.Logger)` overrides the logger for tests/embedded use;
   without a `logs` component the fallback is `slog.Default()`.
 - `Init` starts the watcher + reload loop; `Shutdown` stops them cleanly.
-- Implements `cf.MetricsProvider`: contributes a `caerus_configuration_info`
+- Implements `cf.MetricsProvider`: contributes a `configuration_info`
   sample (count + source names) to the `observability` component's `/metrics`;
   reports nothing before any source is registered (lazy pickup).
 
