@@ -124,7 +124,11 @@ func splitKnownFlags(args []string, known map[string]reflect.Kind) (parseList, r
 func (c *Configuration) flagNamesLocked() (map[string]reflect.Kind, error) {
 	names := make(map[string]reflect.Kind)
 	owners := make(map[string]string) // flag name → source that declared it
-	for _, s := range c.sources {
+	for _, name := range c.order {
+		s := c.sources[name]
+		if s == nil {
+			continue
+		}
 		z := s.zero()
 		v := reflect.ValueOf(z)
 		if v.Kind() != reflect.Pointer || v.IsNil() || v.Elem().Kind() != reflect.Struct {
@@ -157,8 +161,9 @@ func (c *Configuration) flagNamesLocked() (map[string]reflect.Kind, error) {
 	// flag (CLI-only; the value is read by JobRequests, not a struct field). A
 	// collision with a field flag or another source's job flag is a wiring error.
 	jobFlags := make(map[string]bool)
-	for _, s := range c.sources {
-		if s.job.Flag == "" {
+	for _, name := range c.order {
+		s := c.sources[name]
+		if s == nil || s.job.Flag == "" {
 			continue
 		}
 		if owner, dup := owners[s.job.Flag]; dup {
@@ -202,8 +207,9 @@ func (c *Configuration) ParseFlags(args []string) (rest []string, err error) {
 	// Each shares the source's Name as its flag name; a field flag with the
 	// same name (or a Bool one) is a wiring error.
 	pathFlags := make(map[string]string)
-	for _, s := range c.sources {
-		if s.path == "" {
+	for _, name := range c.order {
+		s := c.sources[name]
+		if s == nil || s.path == "" {
 			continue
 		}
 		if _, dup := names[s.name]; dup {

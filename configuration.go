@@ -115,6 +115,9 @@ type Configuration struct {
 	loggerSet bool
 	logsSub   *cf_logs.Subscription
 	sources   map[string]*source
+	// order tracks source registration order so flag/job collision messages and
+	// other source-iterating paths stay deterministic (map iteration is not).
+	order []string
 
 	// flagValues holds the process-start flag overlay (name → raw string) from
 	// the most recent ParseFlags. Guarded by mu; applied by loadSource on every
@@ -135,7 +138,7 @@ type source struct {
 	path      string // empty = fileless (env / AfterLoad only)
 	owner     string
 	envPrefix string
-	job       cf.JobSpec // declared job flag (empty Flag = no job declared)
+	job       cf.JobSpec                // declared job flag (empty Flag = no job declared)
 	decode    func([]byte) (any, error) // nil when fileless
 	zero      func() any                // returns *T
 	after     func(any) error
@@ -406,6 +409,7 @@ func (c *Configuration) registerSource(s *source) error {
 		return fmt.Errorf("cf_configuration: source %q is already registered", s.name)
 	}
 	c.sources[s.name] = s
+	c.order = append(c.order, s.name)
 	if c.watcher != nil && s.path != "" {
 		if err := c.watchLocked(s); err != nil {
 			c.mu.Unlock()
