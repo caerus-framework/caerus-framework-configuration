@@ -66,14 +66,18 @@ func flagKey(f reflect.StructField) (string, bool) {
 // into a field of this type. Unsupported flag-tagged fields are a wiring error
 // and fail ParseFlags rather than silently doing nothing.
 func flagFieldSupported(f reflect.StructField) bool {
-	switch f.Type.Kind() {
+	t := f.Type
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	switch t.Kind() {
 	case reflect.String, reflect.Bool,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
 		reflect.Float32, reflect.Float64:
 		return true // int64 includes time.Duration; setFieldFromString handles it
 	case reflect.Slice:
-		return f.Type.Elem().Kind() == reflect.String
+		return t.Elem().Kind() == reflect.String
 	default:
 		return false
 	}
@@ -154,7 +158,13 @@ func (c *Configuration) flagNamesLocked() (map[string]reflect.Kind, error) {
 				return nil, fmt.Errorf("cf_configuration: flag --%s is declared by sources %q and %q", name, prev, s.name)
 			}
 			owners[name] = s.name
-			names[name] = f.Type.Kind()
+			// Pointer-to-scalar fields register as their element kind so a
+			// *bool flag stays a no-value Bool flag.
+			kind := f.Type.Kind()
+			if f.Type.Kind() == reflect.Ptr {
+				kind = f.Type.Elem().Kind()
+			}
+			names[name] = kind
 		}
 	}
 	// Job flags: each source with a declared job registers --<Flag> as a string

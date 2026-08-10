@@ -102,9 +102,17 @@ func toEnvName(s string) string {
 // setFieldFromString parses a raw string into a struct field value. It is
 // shared by the env overlay and the flag overlay: both layers hand over a raw
 // value and this function decides how to decode it for the field's type.
+// Pointer-to-scalar fields are allocated on first use so an explicit value
+// survives overlay while an omitted one stays nil.
 func setFieldFromString(fv reflect.Value, f reflect.StructField, raw string) error {
 	if !fv.CanSet() {
 		return nil
+	}
+	if fv.Kind() == reflect.Ptr {
+		if fv.IsNil() {
+			fv.Set(reflect.New(fv.Type().Elem()))
+		}
+		return setFieldFromString(fv.Elem(), f, raw)
 	}
 	switch fv.Kind() {
 	case reflect.String:
