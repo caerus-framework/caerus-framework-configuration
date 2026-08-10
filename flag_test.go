@@ -200,6 +200,70 @@ func TestParseFlagsInvalidValueErrors(t *testing.T) {
 	}
 }
 
+func TestParseFlagsPointerFields(t *testing.T) {
+	// Pointer-to-scalar fields must accept flag and env overlays: explicit
+	// values set the pointer, omitted values stay nil (zero-value detection).
+	type ptrSample struct {
+		Timeout *float64 `json:"timeout,omitempty" env:"TIMEOUT" flag:"timeout"`
+		Size    *int     `json:"size,omitempty" env:"SIZE" flag:"size"`
+		Secure  *bool    `json:"secure,omitempty" env:"SECURE" flag:"secure"`
+	}
+	c := New()
+	mustAdd(t, c, Source[ptrSample]{Name: "app", EnvPrefix: "APP_"})
+
+	rest, err := c.ParseFlags([]string{"--timeout", "2.5", "--size", "1024", "--secure", "serve"})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if len(rest) != 1 || rest[0] != "serve" {
+		t.Fatalf("rest = %v, want [serve]", rest)
+	}
+	got := MustGet[ptrSample](c, "app")
+	if got.Timeout == nil || *got.Timeout != 2.5 {
+		t.Fatalf("Timeout = %v, want 2.5", got.Timeout)
+	}
+	if got.Size == nil || *got.Size != 1024 {
+		t.Fatalf("Size = %v, want 1024", got.Size)
+	}
+	if got.Secure == nil || !*got.Secure {
+		t.Fatalf("Secure = %v, want true (bare bool flag)", got.Secure)
+	}
+}
+
+func TestParseFlagsPointerFieldEnvOverlay(t *testing.T) {
+	type ptrSample struct {
+		Timeout *float64 `json:"timeout,omitempty" env:"TIMEOUT"`
+		Secure  *bool    `json:"secure,omitempty" env:"SECURE"`
+	}
+	t.Setenv("APP_TIMEOUT", "3.5")
+	t.Setenv("APP_SECURE", "false")
+	c := New()
+	mustAdd(t, c, Source[ptrSample]{Name: "app", EnvPrefix: "APP_"})
+
+	got := MustGet[ptrSample](c, "app")
+	if got.Timeout == nil || *got.Timeout != 3.5 {
+		t.Fatalf("Timeout = %v, want 3.5 from env", got.Timeout)
+	}
+	if got.Secure == nil || *got.Secure {
+		t.Fatalf("Secure = %v, want false from env", got.Secure)
+	}
+}
+
+func TestParseFlagsPointerFieldOmittedStaysNil(t *testing.T) {
+	type ptrSample struct {
+		Timeout *float64 `json:"timeout,omitempty" env:"TIMEOUT" flag:"timeout"`
+	}
+	c := New()
+	mustAdd(t, c, Source[ptrSample]{Name: "app", EnvPrefix: "APP_"})
+
+	if _, err := c.ParseFlags(nil); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if got := MustGet[ptrSample](c, "app"); got.Timeout != nil {
+		t.Fatalf("Timeout = %v, want nil when omitted", got.Timeout)
+	}
+}
+
 func TestParseFlagsUnsupportedFieldTypeErrors(t *testing.T) {
 	type bad struct {
 		Blob struct{} `flag:"blob"`
