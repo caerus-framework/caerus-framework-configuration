@@ -33,6 +33,11 @@ positional args are returned so subcommands survive. Values are swapped
   the struct after the file decode (or onto a zero value when `Path` is empty).
 - **Flag overlay**: `flag`-tagged fields get a `--<flag>` via `ParseFlags`,
   applied after env and before `AfterLoad`. Long names only (stdlib `flag`).
+- **Scalar and pointer fields**: both are first-class. Prefer **scalars** when
+  zero-value-is-default. Use **`*T`** only when absent must differ from an
+  explicit value (non-zero code defaults, meaningful zero, reload presence).
+  Env/flag overlays allocate pointer fields on first set; omitted keys stay
+  `nil`. Do not pointer-wrap every knob for uniformity.
 - **AfterLoad**: hook for DSN/URL overlays (e.g. `POSTGRES_DSN`, `VALKEY_URL`)
   before Validate.
 - **Validated hot-reload**: `fsnotify` watches the file's directory. On change
@@ -179,10 +184,11 @@ above.
 Flags are a **process-start overlay** over the exact same fields as env — not a
 second config system. A field gets a `--<flag>` (stdlib `flag`, long names only)
 when its `flag` struct tag is set; `flag:"-"` opts out, and an absent tag means
-no CLI for that field. Bool fields register as bare flags (`--tls`, `--tls=false`);
-everything else takes a value (`--host db.internal` or `--host=db.internal`).
-Every source with a `Path` additionally gets a `--<Name>` file-path flag
-(default = the source's `Path`).
+no CLI for that field. Bool fields (including `*bool`) register as bare flags
+(`--tls`, `--tls=false`); other scalars and pointer-to-scalars take a value
+(`--host db.internal` or `--host=db.internal`). Pointer fields stay `nil` when
+the flag/env key is omitted. Every source with a `Path` additionally gets a
+`--<Name>` file-path flag (default = the source's `Path`).
 
 Contract:
 
