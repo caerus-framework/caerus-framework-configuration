@@ -42,9 +42,9 @@ const (
 //
 // Load order (later wins): file (if Path set) → env overlay (if EnvPrefix set)
 // → flag overlay (if ParseFlags ran and the struct has flag tags) → AfterLoad
-// → Validate. See AGENTS.md. Files are the Kubernetes rotation plane (External
-// Secrets → mount → fsnotify); env is for local/CI/PaaS; flags are a
-// process-start overlay and do not hot-reload by themselves.
+// → Validate. Files are the Kubernetes rotation plane (External Secrets →
+// mount → fsnotify); env is for local/CI/PaaS; flags are a process-start
+// overlay and do not hot-reload by themselves.
 type Source[T any] struct {
 	// Name is the logical name of this source (e.g. "mongodb"). It is the key
 	// used by Get/MustGet and must be unique within the framework.
@@ -58,7 +58,7 @@ type Source[T any] struct {
 	// providing it overrides where the file is read from (defaults to this
 	// Path), so the file location is itself a per-source CLI option. There is
 	// no "config directory" bootstrap setting — each source declares its own
-	// file, env and arg options (see AGENTS.md "Configuration").
+	// file, env and arg options.
 	Path string
 	// Format selects the file encoding. Ignored when Path is empty.
 	Format Format
