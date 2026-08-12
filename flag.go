@@ -124,7 +124,7 @@ func splitKnownFlags(args []string, known map[string]reflect.Kind) (parseList, r
 // process-wide namespace: a flag-tagged field of an unsupported type, the same
 // flag declared twice on one source, or the same flag declared by two sources
 // (including core sources) is a wiring error — even when the types match.
-// Silent sharing of one CLI knob across sources is not allowed.
+// Silent sharing of one CLI flag across sources is not allowed.
 func (c *Configuration) flagNamesLocked() (map[string]reflect.Kind, error) {
 	names := make(map[string]reflect.Kind)
 	owners := make(map[string]string) // flag name → source that declared it
