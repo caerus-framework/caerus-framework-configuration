@@ -57,7 +57,7 @@ type Source[T any] struct {
 	// A source with a Path also gets a --<Name> file-path flag in ParseFlags:
 	// providing it overrides where the file is read from (defaults to this
 	// Path), so the file location is itself a per-source CLI option. There is
-	// no "config directory" bootstrap knob — each source declares its own
+	// no "config directory" bootstrap setting — each source declares its own
 	// file, env and arg options (see AGENTS.md "Configuration").
 	Path string
 	// Format selects the file encoding. Ignored when Path is empty.

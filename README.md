@@ -37,7 +37,7 @@ positional args are returned so subcommands survive. Values are swapped
   zero-value-is-default. Use **`*T`** only when absent must differ from an
   explicit value (non-zero code defaults, meaningful zero, reload presence).
   Env/flag overlays allocate pointer fields on first set; omitted keys stay
-  `nil`. Do not pointer-wrap every knob for uniformity.
+  `nil`. Do not pointer-wrap every setting for uniformity.
 - **AfterLoad**: hook for DSN/URL overlays (e.g. `POSTGRES_DSN`, `VALKEY_URL`)
   before Validate.
 - **Validated hot-reload**: `fsnotify` watches the file's directory. On change
@@ -207,7 +207,7 @@ Contract:
 - **Per-source file-path flags:** every source with a `Path` also gets a
   `--<Name>` flag (default = its `Path`). Providing it overrides where that
   source's file is read from — the file location is itself a per-source option.
-  There is no "config directory" bootstrap knob; each source declares its own
+  There is no "config directory" bootstrap setting; each source declares its own
   file, env and arg options.
 - **Unknown flags and positional args survive:** the first unknown flag,
   single-dash arg, positional arg, or `--` terminator moves the rest of the
