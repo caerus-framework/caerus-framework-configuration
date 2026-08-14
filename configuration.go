@@ -77,7 +77,9 @@ type Source[T any] struct {
 	// cf.JobSource after argv absorption and routes it before serving. CLI-only:
 	// the value lives in the parsed flag, never in the config file or
 	// environment. Tasks (if non-empty) restricts the accepted task values;
-	// a value outside the set fails JobRequests. The source must set Owner.
+	// a value outside the set fails JobRequests. Two sources must not set a
+	// job flag for the same Owner in one process (JobRequests fails closed:
+	// one job per target). The source must set Owner.
 	Job cf.JobSpec
 	// AfterLoad runs after file+env overlay and before Validate. Use it for
 	// DSN/URL overlays (e.g. POSTGRES_DSN → OverlayDSN). Nil skips the step.
