@@ -62,11 +62,13 @@ func registerJob(name, owner string, job cf.JobSpec, dst *cf.JobSpec) error {
 // the requested jobs: the flag names the instance (the source's Owner), the
 // value names the task to run on it (e.g. --postgresql.job=migrate → run task
 // "migrate" on the "postgresql" instance). A task outside the source's declared
-// Tasks set is an error. CLI-only: file and environment values never produce a
-// job request. Empty (no job flag provided) returns an empty slice.
+// Tasks set is an error. Two flags that name the same Owner are an error: one
+// job per target per process. CLI-only: file and environment values never
+// produce a job request. Empty (no job flag provided) returns an empty slice.
 //
 // JobRequests must run after argv absorption; the framework calls it before any
-// component initializes.
+// component initializes. Sources are visited in registration order so a
+// duplicate-Owner error names a stable pair of flags.
 func (c *Configuration) JobRequests() ([]cf.JobRequest, error) {
 	if c == nil {
 		return nil, nil
@@ -74,9 +76,10 @@ func (c *Configuration) JobRequests() ([]cf.JobRequest, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var out []cf.JobRequest
-	seen := make(map[string]bool)
-	for _, s := range c.sources {
-		if s.job.Flag == "" {
+	seen := make(map[string]string) // owner → first job flag that named it
+	for _, name := range c.order {
+		s := c.sources[name]
+		if s == nil || s.job.Flag == "" {
 			continue
 		}
 		raw, ok := c.flagValues[s.job.Flag]
@@ -96,10 +99,10 @@ func (c *Configuration) JobRequests() ([]cf.JobRequest, error) {
 				return nil, fmt.Errorf("cf_configuration: job --%s: unknown task %q (supported: %s)", s.job.Flag, task, strings.Join(s.job.Tasks, ", "))
 			}
 		}
-		if seen[s.owner] {
-			continue
+		if prev, ok := seen[s.owner]; ok {
+			return nil, fmt.Errorf("cf_configuration: job flags --%s and --%s both name component %q; one job per target per process", prev, s.job.Flag, s.owner)
 		}
-		seen[s.owner] = true
+		seen[s.owner] = s.job.Flag
 		out = append(out, cf.JobRequest{Component: s.owner, Flag: s.job.Flag, Task: task})
 	}
 	return out, nil

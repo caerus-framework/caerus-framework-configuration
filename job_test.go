@@ -109,20 +109,37 @@ func TestJobRequestsEmptyTasksAllowsAny(t *testing.T) {
 	}
 }
 
-func TestJobRequestsDeduplicatesSameOwner(t *testing.T) {
+func TestJobRequestsRejectsSameOwner(t *testing.T) {
+	c := New()
+	newJobSource(t, c, "db", "db", cf.JobSpec{Flag: "db.job", Tasks: []string{"migrate"}})
+	newJobSource(t, c, "db2", "db", cf.JobSpec{Flag: "db2.job", Tasks: []string{"migrate", "seed"}})
+
+	if _, err := c.ParseFlags([]string{"--db.job=migrate", "--db2.job=seed"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	_, err := c.JobRequests()
+	if err == nil {
+		t.Fatal("expected error when two job flags name the same Owner")
+	}
+	if !strings.Contains(err.Error(), "db") || !strings.Contains(err.Error(), "one job per target") {
+		t.Fatalf("error = %v, want duplicate Owner / one job per target", err)
+	}
+}
+
+func TestJobRequestsSameOwnerOneFlagOnly(t *testing.T) {
 	c := New()
 	newJobSource(t, c, "db", "db", cf.JobSpec{Flag: "db.job", Tasks: []string{"migrate"}})
 	newJobSource(t, c, "db2", "db", cf.JobSpec{Flag: "db2.job", Tasks: []string{"migrate"}})
 
-	if _, err := c.ParseFlags([]string{"--db.job=migrate", "--db2.job=migrate"}); err != nil {
+	if _, err := c.ParseFlags([]string{"--db.job=migrate"}); err != nil {
 		t.Fatalf("ParseFlags: %v", err)
 	}
 	reqs, err := c.JobRequests()
 	if err != nil {
 		t.Fatalf("JobRequests: %v", err)
 	}
-	if len(reqs) != 1 || reqs[0].Component != "db" {
-		t.Fatalf("JobRequests = %+v, want the request deduplicated to one", reqs)
+	if len(reqs) != 1 || reqs[0].Component != "db" || reqs[0].Flag != "db.job" {
+		t.Fatalf("JobRequests = %+v, want the one flag that was set", reqs)
 	}
 }
 

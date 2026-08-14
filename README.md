@@ -222,8 +222,12 @@ Contract:
   carries no job field); `ParseFlags` registers `--<Flag>` as a string flag and
   `JobRequests()` (implements `cf.JobSource`) returns the parsed request(s)
   after argv absorption, validating the task against the declared `Tasks`
-  (fail-fast before any data Init). A job flag colliding with a field flag or
-  another source's job flag is a parse-time wiring error.
+  (fail-fast before any data Init). Two job flags that name the same
+  `Owner` (the same component `Name()`) are a `JobRequests` error: **one
+  job per target per process**. A job flag colliding with a field flag or
+  another source's job flag is a parse-time wiring error. Distinct Owners
+  (for example `--postgresql.job=migrate` and `--postgresql.orders.job=migrate`
+  on two named postgres instances) are two targets and both run.
 
 In production binaries **`main` never calls `ParseFlags`**. The framework runs
 the registrar pass (every `ConfigSourceRegistrar`) then `ParseFlags` at the
