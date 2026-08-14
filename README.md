@@ -54,6 +54,37 @@ positional args are returned so subcommands survive. Values are swapped
   ConfigMap/Secret **symlink swaps** are detected; identical content is
   deduplicated by hash (no spurious reloads). See
   [docs/K8S.md](docs/K8S.md).
+- **Secret fields:** tag credentials `secret:"redact"`. Overlay and `Get`
+  still hold the real value. `LogArgs` / `SecretPresence` are the only
+  helpers that look at the tag — use them on reload summaries instead of
+  logging the struct.
+
+## Secret fields (`secret:"redact"`)
+
+Configuration **declares** which fields are secrets. Logs **prints**
+`[redacted]`. Pick this one tag; do not invent a second convention.
+
+```go
+type PostgresConfig struct {
+    Host     string `json:"host" env:"HOST"`
+    Password string `json:"password" env:"PASSWORD" secret:"redact"`
+}
+```
+
+```text
+Wrong: slog.Info("reload", "cfg", cfg)          // dumps password
+Right: slog.Info("reload", LogArgs(cfg)...)     // password=[redacted], password_set=true, host visible
+Right: slog.Info("reload", "host", cfg.Host, SecretPresence(cfg)...)
+```
+
+`Get` / `Lookup` / env / flags are unchanged. Empty secrets log
+`password_set=false` and do not print `[redacted]`. Nested structs are
+not walked (same limit as env overlay). First consumers: postgresql
+`password`, valkey `password`, resend `api_key`.
+
+Do not log overlay parse errors at Info with file bytes. Reload failures
+stay at Error with the parse error (JSON/YAML messages, not a dump of the
+file).
 
 ## Usage
 
