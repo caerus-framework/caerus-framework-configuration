@@ -89,7 +89,7 @@ func flagFieldSupported(f reflect.StructField) bool {
 // single-dash args pass through to the remainder in order. Only "--" terminates
 // scanning (everything after it is positional). This is what lets subcommands
 // (`serve`), positionals (`price get <uuid>`), and app flags
-// (e.g. `--my-app-flag`) survive while `serve --vpq-debug` still overlays.
+// (e.g. `--my-app-flag`) survive while `serve --http-bind :8082` still overlays.
 // `known` maps flag name → field kind (reflect.Bool flags take no value).
 func splitKnownFlags(args []string, known map[string]reflect.Kind) (parseList, rest []string) {
 	for i := 0; i < len(args); i++ {
