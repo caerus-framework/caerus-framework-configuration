@@ -1,3 +1,7 @@
+github.com/caerus-framework/caerus-framework v0.0.10 h1:6ftdCT4pbKjt7L11dRd4FGhJi6E2mb5aEXuqLdNiz6Q=
+github.com/caerus-framework/caerus-framework v0.0.10/go.mod h1:HfKrNbfJMzU+plPFylU+ThvtHbD+zkrvQ3DYLxv95+g=
+github.com/caerus-framework/caerus-framework-logs v0.0.8 h1:d1mdTfl2cCHwUa9Yc/zEghGOGCK+ef2i7zJFNbuiIlk=
+github.com/caerus-framework/caerus-framework-logs v0.0.8/go.mod h1:iNi9diwlvYpFt66Q7I52Kx8DXr2Lz0nZQ0mHcEmpjLY=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx59Ho=
 github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
