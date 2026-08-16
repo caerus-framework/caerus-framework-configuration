@@ -120,7 +120,7 @@ func main() {
 			ConfigSource: "logs", // core Source[LogConfig]; file config/logs.json
 		},
 		Observability: &cf.ObservabilitySettings{
-			Address:      ":9090",
+			Bind:         ":9090",
 			ConfigSource: "observability",
 		},
 		Components: []cf.CaerusComponent{
