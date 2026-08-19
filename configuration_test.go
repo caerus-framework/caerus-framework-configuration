@@ -56,6 +56,77 @@ func TestAddSourceValueGenericFree(t *testing.T) {
 	}
 }
 
+func TestAddSourceValueGenericFreeAfterLoadAndValidate(t *testing.T) {
+	c := New()
+	path := writeFile(t, t.TempDir(), "obs.json", `{"host":"file-host","port":27018}`)
+
+	if err := c.AddSourceValue(cf.ConfigSourceValue{
+		Name:   "observability",
+		Path:   path,
+		Format: "json",
+		Sample: mongoConfig{},
+		AfterLoad: func(v any) error {
+			cfg, ok := v.(*mongoConfig)
+			if !ok {
+				t.Fatalf("AfterLoad got %T, want *mongoConfig", v)
+			}
+			cfg.Host = "after-" + cfg.Host
+			return nil
+		},
+		Validate: func(v any) error {
+			cfg, ok := v.(*mongoConfig)
+			if !ok {
+				t.Fatalf("Validate got %T, want *mongoConfig", v)
+			}
+			if cfg.Port == 0 {
+				return errors.New("port is required")
+			}
+			if cfg.Host != "after-file-host" {
+				return errors.New("AfterLoad must run before Validate")
+			}
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("AddSourceValue: %v", err)
+	}
+
+	got, ok := Get[mongoConfig](c, "observability")
+	if !ok {
+		t.Fatal("source not registered with generic-free hooks")
+	}
+	if got.Host != "after-file-host" || got.Port != 27018 {
+		t.Fatalf("got %+v, want AfterLoad result + validated value", got)
+	}
+}
+
+func TestAddSourceValueGenericFreeValidateRejects(t *testing.T) {
+	c := New()
+	path := writeFile(t, t.TempDir(), "obs.json", `{"host":"file-host","port":0}`)
+
+	err := c.AddSourceValue(cf.ConfigSourceValue{
+		Name:   "observability",
+		Path:   path,
+		Format: "json",
+		Sample: mongoConfig{},
+		Validate: func(v any) error {
+			cfg, ok := v.(*mongoConfig)
+			if !ok {
+				t.Fatalf("Validate got %T, want *mongoConfig", v)
+			}
+			if cfg.Port == 0 {
+				return errors.New("port is required")
+			}
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "port is required") {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if _, ok := Get[mongoConfig](c, "observability"); ok {
+		t.Fatal("failed generic-free source must not be registered")
+	}
+}
+
 func writeFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)
@@ -541,6 +612,65 @@ func TestFrameworkIntegration(t *testing.T) {
 	got, ok := cf.Get[*Configuration](fw)
 	if !ok || got != c {
 		t.Fatal("Get[*Configuration] did not return the component")
+	}
+}
+
+func TestAddSourceRejectsOversizedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mongo.json")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), int(MaxConfigFileBytes)+1), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := New()
+	err := AddSource(c, Source[mongoConfig]{Name: "mongo", Path: path, Format: FormatJSON})
+	if err == nil {
+		t.Fatal("AddSource must reject a file larger than MaxConfigFileBytes")
+	}
+	if !strings.Contains(err.Error(), "max") && !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("error should mention the size cap, got %v", err)
+	}
+}
+
+func TestAddSourceAcceptsFileAtMaxSize(t *testing.T) {
+	dir := t.TempDir()
+	body := []byte(`{"host":"x","port":1}`)
+	data := make([]byte, MaxConfigFileBytes)
+	copy(data, body)
+	for i := len(body); i < len(data); i++ {
+		data[i] = ' '
+	}
+	path := filepath.Join(dir, "mongo.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := New()
+	mustAddSource(t, c, Source[mongoConfig]{Name: "mongo", Path: path, Format: FormatJSON})
+	got, ok := Get[mongoConfig](c, "mongo")
+	if !ok || got.Host != "x" || got.Port != 1 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestOversizedReloadKeepsPreviousValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "mongo.json", `{"host":"localhost","port":27017}`)
+	c := New()
+	mustAddSource(t, c, Source[mongoConfig]{Name: "mongo", Path: path, Format: FormatJSON})
+	if err := c.Init(context.Background(), cf.New()); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Shutdown(context.Background()) })
+
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), int(MaxConfigFileBytes)+1), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	err := c.Reload("mongo")
+	if err == nil {
+		t.Fatal("Reload of an oversized file must fail")
+	}
+	got, _ := Get[mongoConfig](c, "mongo")
+	if got == nil || got.Port != 27017 {
+		t.Fatalf("expected previous value after oversized reload, got %+v", got)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -25,6 +26,14 @@ import (
 // component. It is the identifier other components use in GetDependencies to
 // require configuration.
 const ComponentName = "configuration"
+
+// MaxConfigFileBytes is the largest configuration file this component will
+// read (1 MiB). That matches the Kubernetes ConfigMap/Secret object size.
+// Typed chassis configs are far smaller; a bigger file usually means the
+// process was pointed at the wrong path. The bound is on-disk size before
+// decode — it does not cap YAML expansion in memory (prefer JSON in
+// production).
+const MaxConfigFileBytes int64 = 1 << 20
 
 // Format selects the on-disk encoding of a configuration file.
 type Format int
@@ -56,9 +65,12 @@ type Source[T any] struct {
 	//
 	// A source with a Path also gets a --<Name> file-path flag in ParseFlags:
 	// providing it overrides where the file is read from (defaults to this
-	// Path), so the file location is itself a per-source CLI option. There is
-	// no "config directory" bootstrap setting — each source declares its own
-	// file, env and arg options.
+	// Path). There is no "config directory" bootstrap setting — each source
+	// declares its own file, env and arg options.
+	//
+	// Path is trusted: the process opens any file that uid can read. There is
+	// no directory allowlist. The --<Name> override is the same trust (argv /
+	// Pod spec), not a sandbox. filepath.Abs is not a jail.
 	Path string
 	// Format selects the file encoding. Ignored when Path is empty.
 	Format Format
@@ -129,8 +141,11 @@ type Configuration struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	watcher *fsnotify.Watcher
-	done    chan struct{}
-	once    sync.Once
+	// watchedDirs holds a reference count for every fsnotify directory we
+	// currently watch. Multiple sources may share the same directory.
+	watchedDirs map[string]int
+	done        chan struct{}
+	once        sync.Once
 }
 
 // source is the runtime representation of a Source. The decode and validate
@@ -166,9 +181,10 @@ func New(opts ...Option) *Configuration {
 		opt(&o)
 	}
 	return &Configuration{
-		logger:    o.logger,
-		loggerSet: o.loggerSet,
-		sources:   make(map[string]*source),
+		logger:      o.logger,
+		loggerSet:   o.loggerSet,
+		sources:     make(map[string]*source),
+		watchedDirs: make(map[string]int),
 	}
 }
 
@@ -388,6 +404,12 @@ func (c *Configuration) AddSourceValue(src cf.ConfigSourceValue) error {
 			}
 			return v, nil
 		}
+	}
+	if src.AfterLoad != nil {
+		s.after = src.AfterLoad
+	}
+	if src.Validate != nil {
+		s.validate = src.Validate
 	}
 	return c.registerSource(s)
 }
@@ -668,7 +690,25 @@ func (c *Configuration) watchLocked(s *source) error {
 		return nil
 	}
 	dir := filepath.Dir(s.path)
-	return c.watcher.Add(dir)
+	if c.watchedDirs[dir] == 0 {
+		if err := c.watcher.Add(dir); err != nil {
+			return err
+		}
+	}
+	c.watchedDirs[dir]++
+	return nil
+}
+
+// unwatchLocked removes a directory watch when the last source stops
+// requiring it. Callers must hold c.mu.
+func (c *Configuration) unwatchLocked(dir string) error {
+	cnt := c.watchedDirs[dir]
+	if cnt <= 1 {
+		delete(c.watchedDirs, dir)
+		return c.watcher.Remove(dir)
+	}
+	c.watchedDirs[dir] = cnt - 1
+	return nil
 }
 
 // loadSource builds, overlays, validates and stores a source value. When force
@@ -681,7 +721,7 @@ func loadSource(s *source, force bool, flags map[string]string) (bool, error) {
 		hash string
 	)
 	if s.path != "" {
-		data, err := os.ReadFile(s.path)
+		data, err := readConfigFile(s.path)
 		if err != nil {
 			return false, err
 		}
@@ -742,6 +782,32 @@ func loadSource(s *source, force bool, flags map[string]string) (bool, error) {
 		return true, nil // store succeeded; treat as changed
 	}
 	return changed, nil
+}
+
+// readConfigFile reads a source file, rejecting anything larger than
+// MaxConfigFileBytes. Stat fails fast on a huge mount; LimitReader catches a
+// file that grows between Stat and Read (or a lying Size).
+func readConfigFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if st.Size() > MaxConfigFileBytes {
+		return nil, fmt.Errorf("config file %q is %d bytes (max %d)", path, st.Size(), MaxConfigFileBytes)
+	}
+	data, err := io.ReadAll(io.LimitReader(f, MaxConfigFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > MaxConfigFileBytes {
+		return nil, fmt.Errorf("config file %q is larger than %d bytes", path, MaxConfigFileBytes)
+	}
+	return data, nil
 }
 
 func valuesDiffer(a, b any) (bool, error) {
