@@ -88,8 +88,9 @@ type Source[T any] struct {
 	// (e.g. --postgresql.job=migrate); the framework reads the request via
 	// cf.JobSource after argv absorption and routes it before serving. CLI-only:
 	// the value lives in the parsed flag, never in the config file or
-	// environment. Tasks (if non-empty) restricts the accepted task values;
-	// a value outside the set fails JobRequests. Two sources must not set a
+	// environment. Tasks lists allowed task strings and is required when Flag
+	// is set (Flag without Tasks fails at AddSource). A value outside Tasks
+	// fails JobRequests. Two sources must not set a
 	// job flag for the same Owner in one process (JobRequests fails closed:
 	// one job per target). The source must set Owner.
 	Job cf.JobSpec
@@ -764,7 +765,7 @@ func loadSource(s *source, force bool, flags map[string]string) (bool, error) {
 	}
 	if s.validate != nil {
 		if err := s.validate(v); err != nil {
-			return false, err
+			return false, wrapValidateErr(err)
 		}
 	}
 

@@ -93,19 +93,16 @@ func TestJobRequestsRejectsUnknownTask(t *testing.T) {
 	}
 }
 
-func TestJobRequestsEmptyTasksAllowsAny(t *testing.T) {
+func TestAddSourceRejectsFlagWithoutTasks(t *testing.T) {
 	c := New()
-	newJobSource(t, c, "db", "db", cf.JobSpec{Flag: "db.job"})
-
-	if _, err := c.ParseFlags([]string{"--db.job=something"}); err != nil {
-		t.Fatalf("ParseFlags: %v", err)
-	}
-	reqs, err := c.JobRequests()
-	if err != nil {
-		t.Fatalf("JobRequests: %v", err)
-	}
-	if len(reqs) != 1 || reqs[0].Task != "something" {
-		t.Fatalf("JobRequests = %+v, want the arbitrary task", reqs)
+	err := AddSource(c, Source[jobSample]{
+		Name:      "db",
+		EnvPrefix: "JOB_",
+		Owner:     "db",
+		Job:       cf.JobSpec{Flag: "db.job"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "requires at least one task") {
+		t.Fatalf("AddSource with Flag and empty Tasks should fail, got %v", err)
 	}
 }
 

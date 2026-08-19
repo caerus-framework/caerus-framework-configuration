@@ -430,3 +430,23 @@ func TestSplitKnownFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestResetFlagsClearsOverlay(t *testing.T) {
+	c := New()
+	newFlagSampleSource(t, c, `{"host":"file-host","port":1}`)
+
+	if _, err := c.ParseFlags([]string{"--host", "cli-host"}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if got := MustGet[flagSample](c, "app"); got.Host != "cli-host" {
+		t.Fatalf("Host = %q, want cli-host", got.Host)
+	}
+
+	c.ResetFlags()
+	if _, err := c.ParseFlags([]string{"--host", "second-pass"}); err != nil {
+		t.Fatalf("second ParseFlags: %v", err)
+	}
+	if got := MustGet[flagSample](c, "app"); got.Host != "second-pass" {
+		t.Fatalf("Host after ResetFlags + ParseFlags = %q, want second-pass", got.Host)
+	}
+}
