@@ -3,7 +3,7 @@ module github.com/caerus-framework/caerus-framework-configuration
 go 1.26
 
 require (
-	github.com/caerus-framework/caerus-framework v0.0.11
+	github.com/caerus-framework/caerus-framework v0.0.12
 	github.com/caerus-framework/caerus-framework-logs v0.0.9
 	github.com/fsnotify/fsnotify v1.10.1
 	gopkg.in/yaml.v3 v3.0.1
