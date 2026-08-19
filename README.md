@@ -29,6 +29,11 @@ positional args are returned so subcommands survive. Values are swapped
   no shared global config struct, no `map[string]interface{}` reads.
 - **Fail-fast startup**: `AddSource` builds + validates immediately and
   returns the error; a broken config never starts.
+- **Max file size**: each source file is capped at 1 MiB
+  (`MaxConfigFileBytes`). That matches a Kubernetes ConfigMap/Secret
+  object. A larger file is rejected (startup fails; reload keeps
+  last-good). The cap is on-disk bytes before decode — it does not stop a
+  YAML bomb from expanding in memory; prefer JSON in production.
 - **Env overlay**: `EnvPrefix` maps `PREFIX` + `env`/`json` field names onto
   the struct after the file decode (or onto a zero value when `Path` is empty).
 - **Flag overlay**: `flag`-tagged fields get a `--<flag>` via `ParseFlags`,
@@ -315,9 +320,10 @@ Implements `caerusframework.CaerusComponent`:
 
 | Situation | Behaviour |
 |---|---|
-| Initial load failure (missing file, bad parse, validation error) | `AddSource` returns an error; source not registered; startup continues to fail via the caller |
+| Initial load failure (missing file, oversized file, bad parse, validation error) | `AddSource` returns an error; source not registered; startup continues to fail via the caller |
 | Valid change detected | New value swapped in atomically; owner `OnConfigReload(source, cfg)` called |
 | Malformed content on reload | Rejected; previous value kept; error logged |
+| File larger than 1 MiB on reload | Rejected; previous value kept; error logged |
 | Validator rejects new value on reload | Rejected; previous value kept; error logged |
 | Content unchanged (e.g. K8s rewrites identical bytes) | Skipped (sha256 dedup); no reload, no notification |
 | Multiple configs in one directory | Any event re-checks affected sources; hash dedup keeps it cheap and correct |

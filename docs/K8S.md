@@ -102,6 +102,11 @@ if err := cf_configuration.AddSource(fwCfg, cf_configuration.Source[MongoConfig]
   starting with defaults. If the mount may legitimately be late, register the
   source only after it is known to exist, or add an explicit readiness check
   before `fw.Run`.
+- **File size**: each source file must be **1 MiB or smaller**
+  (`MaxConfigFileBytes`). That is also the ConfigMap/Secret object size, so a
+  normal mount already cannot exceed it. A bigger file (wrong `--<name>`
+  path, a log dump bind-mounted over the config) fails the load; a reload
+  keeps last-good. The cap is the file on disk, not YAML decode memory.
 - **Rollouts**: `kubectl rollout restart` is still the safe way to apply a
   change if you want a clean process start; hot-reload is for changes that must
   not interrupt service.

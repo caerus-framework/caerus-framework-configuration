@@ -544,4 +544,63 @@ func TestFrameworkIntegration(t *testing.T) {
 	}
 }
 
+func TestAddSourceRejectsOversizedFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "mongo.json")
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), int(MaxConfigFileBytes)+1), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := New()
+	err := AddSource(c, Source[mongoConfig]{Name: "mongo", Path: path, Format: FormatJSON})
+	if err == nil {
+		t.Fatal("AddSource must reject a file larger than MaxConfigFileBytes")
+	}
+	if !strings.Contains(err.Error(), "max") && !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("error should mention the size cap, got %v", err)
+	}
+}
+
+func TestAddSourceAcceptsFileAtMaxSize(t *testing.T) {
+	dir := t.TempDir()
+	body := []byte(`{"host":"x","port":1}`)
+	data := make([]byte, MaxConfigFileBytes)
+	copy(data, body)
+	for i := len(body); i < len(data); i++ {
+		data[i] = ' '
+	}
+	path := filepath.Join(dir, "mongo.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	c := New()
+	mustAddSource(t, c, Source[mongoConfig]{Name: "mongo", Path: path, Format: FormatJSON})
+	got, ok := Get[mongoConfig](c, "mongo")
+	if !ok || got.Host != "x" || got.Port != 1 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestOversizedReloadKeepsPreviousValue(t *testing.T) {
+	dir := t.TempDir()
+	path := writeFile(t, dir, "mongo.json", `{"host":"localhost","port":27017}`)
+	c := New()
+	mustAddSource(t, c, Source[mongoConfig]{Name: "mongo", Path: path, Format: FormatJSON})
+	if err := c.Init(context.Background(), cf.New()); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Shutdown(context.Background()) })
+
+	if err := os.WriteFile(path, bytes.Repeat([]byte("x"), int(MaxConfigFileBytes)+1), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	err := c.Reload("mongo")
+	if err == nil {
+		t.Fatal("Reload of an oversized file must fail")
+	}
+	got, _ := Get[mongoConfig](c, "mongo")
+	if got == nil || got.Port != 27017 {
+		t.Fatalf("expected previous value after oversized reload, got %+v", got)
+	}
+}
+
 var _ cf.CaerusComponent = (*Configuration)(nil)
