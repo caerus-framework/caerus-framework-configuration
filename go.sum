@@ -1,5 +1,3 @@
-github.com/caerus-framework/caerus-framework v0.0.11 h1:MpJb/82vjF6Ckb0Py2/QQTBMsmxyt3yXltVHlZwHYh4=
-github.com/caerus-framework/caerus-framework v0.0.11/go.mod h1:3CzB//+3poSnxabhN6Hc9I4Dg4Qti9dw1s14NisPUw8=
 github.com/caerus-framework/caerus-framework-logs v0.0.9 h1:epimwWaMtIAVrN86O+p+3pcOpzvuVoq4xepte0vf1Og=
 github.com/caerus-framework/caerus-framework-logs v0.0.9/go.mod h1:j0w+XL3YVqmoZJTpY5EOm2RUY5J2kDtsuZA7jv7bf+I=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
