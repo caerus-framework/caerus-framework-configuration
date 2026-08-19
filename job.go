@@ -12,8 +12,9 @@ import (
 var _ cf.JobSource = (*Configuration)(nil)
 
 // normalizeJobSpec validates a source's Job declaration at AddSource time
-// (fail-fast wiring error): a job needs a Flag, tasks must be non-empty and
-// unique. Returns the normalized spec (empty when no job is declared).
+// (fail-fast wiring error): a job needs a Flag and at least one Task; tasks
+// must be non-empty and unique. Returns the normalized spec (empty when no
+// job is declared).
 func normalizeJobSpec(job cf.JobSpec) (cf.JobSpec, error) {
 	if job.Flag == "" && len(job.Tasks) == 0 {
 		return cf.JobSpec{}, nil
@@ -23,6 +24,9 @@ func normalizeJobSpec(job cf.JobSpec) (cf.JobSpec, error) {
 	}
 	if strings.HasPrefix(job.Flag, "-") {
 		return cf.JobSpec{}, fmt.Errorf("job flag --%s must not start with a dash", job.Flag)
+	}
+	if len(job.Tasks) == 0 {
+		return cf.JobSpec{}, fmt.Errorf("job --%s requires at least one task in Tasks", job.Flag)
 	}
 	seen := make(map[string]bool)
 	tasks := make([]string, 0, len(job.Tasks))

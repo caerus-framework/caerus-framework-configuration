@@ -307,3 +307,14 @@ func (c *Configuration) ParseFlags(args []string) (rest []string, err error) {
 	}
 	return rest, err
 }
+
+// ResetFlags clears the process-start flag overlay. It is for tests only —
+// production binaries call ParseFlags once at process start and never reset.
+func (c *Configuration) ResetFlags() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.flagValues = nil
+	c.mu.Unlock()
+}

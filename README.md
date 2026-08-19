@@ -177,6 +177,29 @@ _ = cf_configuration.AddSource(cfg, cf_configuration.Source[cf_postgres.Postgres
 })
 ```
 
+`Validate` must return an error message that names the field and the
+constraint. For structured errors, return `*cf_configuration.FieldError`:
+
+```go
+Validate: func(v *PostgresConfig) error {
+	if v.MaxConns < 1 {
+		return &cf_configuration.FieldError{
+			Field: "max_conns",
+			Err:   errors.New("must be >= 1"),
+		}
+	}
+	return nil
+},
+```
+
+Wrong vs right:
+
+```text
+Wrong: return errors.New("invalid")
+Right: return &FieldError{Field: "max_conns", Err: errors.New("must be >= 1")}
+       → AddSource: source "postgresql": field "max_conns": must be >= 1
+```
+
 Read the current value after the configuration stage has initialized (prefer
 `Lookup` / `Get` so a missing source is an error, not a panic). Both functions
 return **by value** — you get a snapshot copy you can freely read and pass
@@ -242,7 +265,9 @@ Contract:
   (registrars → `ParseFlags`). `ParseFlags` re-loads all sources with the flag
   values applied, and the parsed map is kept and re-applied on every later
   `Reload` / `ReloadAll` (flags do not hot-reload on their own; they are
-  process-start only).
+  process-start only). **`ParseFlags` is a one-shot in production** — call it
+  once at process start. Tests that need a second argv pass may call
+  `ResetFlags()` first (test hygiene only; not for production).
 - **Unique field flags:** `flag` names are a process-wide namespace across all
   registered sources (including core `logs` / `observability`). The same
   `--short-flag` declared on two sources — or twice on one source — is a
@@ -262,7 +287,9 @@ Contract:
 - **Layering:** flags win over env, env wins over file, `AfterLoad` runs last
   (DSN/URL merges see the final value).
 - **Job flags:** a module declares a job on its source with `Source.Job`
-  (`cf.JobSpec{Flag, Tasks}`). The flag **names the instance** and the value
+  (`cf.JobSpec{Flag, Tasks}`). **`Tasks` is required when `Flag` is set** —
+  declaring a job flag without at least one task is a wiring error at
+  `AddSource`. The flag **names the instance** and the value
   **names the task** to run on it (e.g. `--postgresql.job=migrate`). Jobs are
   **CLI-only** — the value never flows from env or file (the config struct
   carries no job field); `ParseFlags` registers `--<Flag>` as a string flag and
@@ -322,9 +349,11 @@ Implements `caerusframework.CaerusComponent`:
   `WithLogger(*slog.Logger)` overrides the logger for tests/embedded use;
   without a `logs` component the fallback is `slog.Default()`.
 - `Init` starts the watcher + reload loop; `Shutdown` stops them cleanly.
-- Implements `cf.MetricsProvider`: contributes a `configuration_info`
-  sample (count + source names) to the `observability` component's `/metrics`;
-  reports nothing before any source is registered (lazy pickup).
+- Does **not** implement `cf.MetricsProvider` (bootstrap — importing
+  observability would cycle). Exposes `MetricSamples()` for observability's
+  internal `configurationMetricsCollector`, which emits `configuration_info`
+  (source count + comma-separated names on `/metrics`). Returns nil before
+  any source is registered (lazy pickup).
 
 ## Hot-reload semantics
 
