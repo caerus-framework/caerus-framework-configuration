@@ -107,6 +107,12 @@ if err := cf_configuration.AddSource(fwCfg, cf_configuration.Source[MongoConfig]
   normal mount already cannot exceed it. A bigger file (wrong `--<name>`
   path, a log dump bind-mounted over the config) fails the load; a reload
   keeps last-good. The cap is the file on disk, not YAML decode memory.
+- **Trusted path**: `Path` and `--<name>` are operator / Pod-spec input.
+  The process will open any file that uid can read (Unix DAC). There is no
+  directory allowlist. Production is a **mounted** file under a directory
+  you chose; reload of that mount **is** rotation. Do not pass untrusted
+  argv as `--postgresql=/host/secret`. `filepath.Abs` is not a sandbox.
+  See the README → Trusted paths.
 - **Rollouts**: `kubectl rollout restart` is still the safe way to apply a
   change if you want a clean process start; hot-reload is for changes that must
   not interrupt service.

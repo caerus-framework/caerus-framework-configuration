@@ -65,9 +65,12 @@ type Source[T any] struct {
 	//
 	// A source with a Path also gets a --<Name> file-path flag in ParseFlags:
 	// providing it overrides where the file is read from (defaults to this
-	// Path), so the file location is itself a per-source CLI option. There is
-	// no "config directory" bootstrap setting — each source declares its own
-	// file, env and arg options.
+	// Path). There is no "config directory" bootstrap setting — each source
+	// declares its own file, env and arg options.
+	//
+	// Path is trusted: the process opens any file that uid can read. There is
+	// no directory allowlist. The --<Name> override is the same trust (argv /
+	// Pod spec), not a sandbox. filepath.Abs is not a jail.
 	Path string
 	// Format selects the file encoding. Ignored when Path is empty.
 	Format Format

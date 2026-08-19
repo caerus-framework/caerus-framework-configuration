@@ -59,6 +59,8 @@ positional args are returned so subcommands survive. Values are swapped
   ConfigMap/Secret **symlink swaps** are detected; identical content is
   deduplicated by hash (no spurious reloads). See
   [docs/K8S.md](docs/K8S.md).
+- **Trusted paths**: `Source.Path` and `--<Name>` are operator/Pod-spec
+  inputs. The component is not a filesystem sandbox (see below).
 - **Secret fields:** tag credentials `secret:"redact"`. Overlay and `Get`
   still hold the real value. `LogArgs` / `SecretPresence` are the only
   helpers that look at the tag — use them on reload summaries instead of
@@ -244,7 +246,8 @@ Contract:
   `--<Name>` flag (default = its `Path`). Providing it overrides where that
   source's file is read from — the file location is itself a per-source option.
   There is no "config directory" bootstrap setting; each source declares its own
-  file, env and arg options.
+  file, env and arg options. That override is **trusted** the same way
+  `Source.Path` is (see “Trusted paths” below).
 - **Unknown flags and positional args survive:** the first unknown flag,
   single-dash arg, positional arg, or `--` terminator moves the rest of the
   command line to the returned `rest` untouched — so `serve` / `migrate` /
@@ -327,6 +330,39 @@ Implements `caerusframework.CaerusComponent`:
 | Validator rejects new value on reload | Rejected; previous value kept; error logged |
 | Content unchanged (e.g. K8s rewrites identical bytes) | Skipped (sha256 dedup); no reload, no notification |
 | Multiple configs in one directory | Any event re-checks affected sources; hash dedup keeps it cheap and correct |
+
+## Trusted paths (same uid as the process)
+
+The configuration component opens **whatever path you give it**:
+`Source.Path` from `WithConfigSource`, or the `--<Name>` file-path flag
+(`--postgresql=/some/file.json`). If the **process user** can read that
+file, we try to parse it as JSON/YAML. That is normal Unix file
+permissions, not a second security layer.
+
+A random HTTP client cannot set this path. Whoever writes the Pod spec,
+Helm `args`, or the binary’s `WithConfigSource` can. The trust boundary
+is **the same as the process uid**, not “the internet.”
+
+`filepath.Abs` only turns `./foo` into an absolute path. It is **not** a
+sandbox and does not stop `--postgresql=/etc/shadow`. (That path will
+usually fail JSON parse, but we still *opened* the file.)
+
+**Production:** mount the file (ConfigMap/Secret) under a directory you
+chose and point `Path` at that mount. Reloading that file **is** the
+rotation plane. Do not treat `--<Name>` as a way to read arbitrary host
+files from untrusted argv.
+
+```text
+Wrong: treat Path as a jail (“Abs means we cannot leave config/”).
+Right: Path is trusted operator input; the uid of the process is the
+       filesystem policy. A wrong --postgresql= is a Pod-spec mistake,
+       same class as pointing at a 2 GiB dump (the 1 MiB cap then
+       rejects the load).
+```
+
+There is no directory allowlist and no `..` filter. Constraining argv on
+a shared host would be a new construct option; this module does not
+ship that.
 
 ## Docs
 
