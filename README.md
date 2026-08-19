@@ -36,6 +36,9 @@ positional args are returned so subcommands survive. Values are swapped
   YAML bomb from expanding in memory; prefer JSON in production.
 - **Env overlay**: `EnvPrefix` maps `PREFIX` + `env`/`json` field names onto
   the struct after the file decode (or onto a zero value when `Path` is empty).
+  By design, an environment variable set to the empty string (`FOO=""`) is
+  treated like “not set”, so it does not clear a value that came from the
+  config file.
 - **Flag overlay**: `flag`-tagged fields get a `--<flag>` via `ParseFlags`,
   applied after env and before `AfterLoad`. Long names only (stdlib `flag`).
 - **Scalar and pointer fields**: both are first-class. Prefer **scalars** when
