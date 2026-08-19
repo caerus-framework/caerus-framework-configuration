@@ -56,6 +56,77 @@ func TestAddSourceValueGenericFree(t *testing.T) {
 	}
 }
 
+func TestAddSourceValueGenericFreeAfterLoadAndValidate(t *testing.T) {
+	c := New()
+	path := writeFile(t, t.TempDir(), "obs.json", `{"host":"file-host","port":27018}`)
+
+	if err := c.AddSourceValue(cf.ConfigSourceValue{
+		Name:   "observability",
+		Path:   path,
+		Format: "json",
+		Sample: mongoConfig{},
+		AfterLoad: func(v any) error {
+			cfg, ok := v.(*mongoConfig)
+			if !ok {
+				t.Fatalf("AfterLoad got %T, want *mongoConfig", v)
+			}
+			cfg.Host = "after-" + cfg.Host
+			return nil
+		},
+		Validate: func(v any) error {
+			cfg, ok := v.(*mongoConfig)
+			if !ok {
+				t.Fatalf("Validate got %T, want *mongoConfig", v)
+			}
+			if cfg.Port == 0 {
+				return errors.New("port is required")
+			}
+			if cfg.Host != "after-file-host" {
+				return errors.New("AfterLoad must run before Validate")
+			}
+			return nil
+		},
+	}); err != nil {
+		t.Fatalf("AddSourceValue: %v", err)
+	}
+
+	got, ok := Get[mongoConfig](c, "observability")
+	if !ok {
+		t.Fatal("source not registered with generic-free hooks")
+	}
+	if got.Host != "after-file-host" || got.Port != 27018 {
+		t.Fatalf("got %+v, want AfterLoad result + validated value", got)
+	}
+}
+
+func TestAddSourceValueGenericFreeValidateRejects(t *testing.T) {
+	c := New()
+	path := writeFile(t, t.TempDir(), "obs.json", `{"host":"file-host","port":0}`)
+
+	err := c.AddSourceValue(cf.ConfigSourceValue{
+		Name:   "observability",
+		Path:   path,
+		Format: "json",
+		Sample: mongoConfig{},
+		Validate: func(v any) error {
+			cfg, ok := v.(*mongoConfig)
+			if !ok {
+				t.Fatalf("Validate got %T, want *mongoConfig", v)
+			}
+			if cfg.Port == 0 {
+				return errors.New("port is required")
+			}
+			return nil
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "port is required") {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if _, ok := Get[mongoConfig](c, "observability"); ok {
+		t.Fatal("failed generic-free source must not be registered")
+	}
+}
+
 func writeFile(t *testing.T, dir, name, content string) string {
 	t.Helper()
 	path := filepath.Join(dir, name)

@@ -144,8 +144,8 @@ type Configuration struct {
 	// watchedDirs holds a reference count for every fsnotify directory we
 	// currently watch. Multiple sources may share the same directory.
 	watchedDirs map[string]int
-	done    chan struct{}
-	once    sync.Once
+	done        chan struct{}
+	once        sync.Once
 }
 
 // source is the runtime representation of a Source. The decode and validate
@@ -181,9 +181,9 @@ func New(opts ...Option) *Configuration {
 		opt(&o)
 	}
 	return &Configuration{
-		logger:    o.logger,
-		loggerSet: o.loggerSet,
-		sources:   make(map[string]*source),
+		logger:      o.logger,
+		loggerSet:   o.loggerSet,
+		sources:     make(map[string]*source),
 		watchedDirs: make(map[string]int),
 	}
 }
@@ -404,6 +404,12 @@ func (c *Configuration) AddSourceValue(src cf.ConfigSourceValue) error {
 			}
 			return v, nil
 		}
+	}
+	if src.AfterLoad != nil {
+		s.after = src.AfterLoad
+	}
+	if src.Validate != nil {
+		s.validate = src.Validate
 	}
 	return c.registerSource(s)
 }
