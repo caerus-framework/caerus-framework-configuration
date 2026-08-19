@@ -175,7 +175,7 @@ func TestAddSourceAndGet(t *testing.T) {
 	}
 	looked, err := Lookup[mongoConfig](c, "mongo")
 	if err != nil || looked != got {
-		t.Fatalf("Lookup = %v, %v; want same pointer as Get", looked, err)
+		t.Fatalf("Lookup = %v, %v; want same value as Get", looked, err)
 	}
 }
 
@@ -352,8 +352,8 @@ func TestReloadOnFileChange(t *testing.T) {
 	}
 
 	eventually(t, 3*time.Second, func() bool {
-		got, _ := Get[mongoConfig](c, "mongo")
-		return got != nil && got.Port == 27018
+		got, ok := Get[mongoConfig](c, "mongo")
+		return ok && got.Port == 27018
 	}, "config to reload to the new value")
 
 	if owner.reloads.Load() == 0 {
@@ -427,9 +427,9 @@ func TestInvalidReloadKeepsPreviousValue(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	time.Sleep(300 * time.Millisecond)
-	got, _ := Get[mongoConfig](c, "mongo")
-	if got == nil || got.Port != 27017 {
-		t.Fatalf("expected previous value after invalid reload, got %+v", got)
+	got, ok := Get[mongoConfig](c, "mongo")
+	if !ok || got.Port != 27017 {
+		t.Fatalf("expected previous value after invalid reload, got %+v (ok=%v)", got, ok)
 	}
 
 	// Valid JSON but rejected by the validator: old value stays.
@@ -437,9 +437,9 @@ func TestInvalidReloadKeepsPreviousValue(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	time.Sleep(300 * time.Millisecond)
-	got, _ = Get[mongoConfig](c, "mongo")
-	if got == nil || got.Port != 27017 {
-		t.Fatalf("expected previous value after rejected validation, got %+v", got)
+	got, ok = Get[mongoConfig](c, "mongo")
+	if !ok || got.Port != 27017 {
+		t.Fatalf("expected previous value after rejected validation, got %+v (ok=%v)", got, ok)
 	}
 }
 
@@ -501,7 +501,8 @@ type reloadHookWithGet struct {
 func (r *reloadHookWithGet) OnConfigReload(source string, cfg any) {
 	r.reloads.Add(1)
 	// This call would deadlock before the fix.
-	r.lastValue.Store(MustGet[mongoConfig](r.cfg, "mongo"))
+	v := MustGet[mongoConfig](r.cfg, "mongo")
+	r.lastValue.Store(&v)
 }
 
 func TestAddSourceAfterInit(t *testing.T) {
@@ -521,8 +522,8 @@ func TestAddSourceAfterInit(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 	eventually(t, 3*time.Second, func() bool {
-		got, _ := Get[mongoConfig](c, "mongo")
-		return got != nil && got.Port == 27018
+		got, ok := Get[mongoConfig](c, "mongo")
+		return ok && got.Port == 27018
 	}, "config added after Init to reload")
 }
 
@@ -668,9 +669,9 @@ func TestOversizedReloadKeepsPreviousValue(t *testing.T) {
 	if err == nil {
 		t.Fatal("Reload of an oversized file must fail")
 	}
-	got, _ := Get[mongoConfig](c, "mongo")
-	if got == nil || got.Port != 27017 {
-		t.Fatalf("expected previous value after oversized reload, got %+v", got)
+	got, ok := Get[mongoConfig](c, "mongo")
+	if !ok || got.Port != 27017 {
+		t.Fatalf("expected previous value after oversized reload, got %+v (ok=%v)", got, ok)
 	}
 }
 

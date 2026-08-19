@@ -178,7 +178,10 @@ _ = cf_configuration.AddSource(cfg, cf_configuration.Source[cf_postgres.Postgres
 ```
 
 Read the current value after the configuration stage has initialized (prefer
-`Lookup` / `Get` so a missing source is an error, not a panic):
+`Lookup` / `Get` so a missing source is an error, not a panic). Both functions
+return **by value** — you get a snapshot copy you can freely read and pass
+around. Mutating it does not affect the live config, and it will not go stale
+when a reload replaces the internal pointer.
 
 ```go
 func (c *CFPostgres) Init(ctx context.Context, fw *cf.CaerusFramework) error {
@@ -186,6 +189,7 @@ func (c *CFPostgres) Init(ctx context.Context, fw *cf.CaerusFramework) error {
 	if err != nil {
 		return err
 	}
+	// cfg is a PostgresConfig value (not a pointer). Use it directly.
 	_ = cfg
 	return nil
 }
