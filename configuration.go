@@ -141,6 +141,9 @@ type Configuration struct {
 	ctx     context.Context
 	cancel  context.CancelFunc
 	watcher *fsnotify.Watcher
+	// watchedDirs holds a reference count for every fsnotify directory we
+	// currently watch. Multiple sources may share the same directory.
+	watchedDirs map[string]int
 	done    chan struct{}
 	once    sync.Once
 }
@@ -181,6 +184,7 @@ func New(opts ...Option) *Configuration {
 		logger:    o.logger,
 		loggerSet: o.loggerSet,
 		sources:   make(map[string]*source),
+		watchedDirs: make(map[string]int),
 	}
 }
 
@@ -680,7 +684,25 @@ func (c *Configuration) watchLocked(s *source) error {
 		return nil
 	}
 	dir := filepath.Dir(s.path)
-	return c.watcher.Add(dir)
+	if c.watchedDirs[dir] == 0 {
+		if err := c.watcher.Add(dir); err != nil {
+			return err
+		}
+	}
+	c.watchedDirs[dir]++
+	return nil
+}
+
+// unwatchLocked removes a directory watch when the last source stops
+// requiring it. Callers must hold c.mu.
+func (c *Configuration) unwatchLocked(dir string) error {
+	cnt := c.watchedDirs[dir]
+	if cnt <= 1 {
+		delete(c.watchedDirs, dir)
+		return c.watcher.Remove(dir)
+	}
+	c.watchedDirs[dir] = cnt - 1
+	return nil
 }
 
 // loadSource builds, overlays, validates and stores a source value. When force

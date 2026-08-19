@@ -267,16 +267,24 @@ func (c *Configuration) ParseFlags(args []string) (rest []string, err error) {
 		if s == nil {
 			continue
 		}
+		oldPath := s.path
 		abs, err := filepath.Abs(v)
 		if err != nil {
 			c.mu.Unlock()
 			return nil, fmt.Errorf("cf_configuration: --%s: %w", name, err)
 		}
-		if abs == s.path {
+		if abs == oldPath {
 			continue
 		}
+		oldDir := filepath.Dir(oldPath)
+		newDir := filepath.Dir(abs)
 		s.path = abs
 		if c.watcher != nil {
+			// When the path override changes the watched parent directory,
+			// remove the old watch if no other sources still need it.
+			if oldDir != newDir {
+				_ = c.unwatchLocked(oldDir)
+			}
 			_ = c.watchLocked(s)
 		}
 	}

@@ -1,9 +1,13 @@
 package cf_configuration
 
 import (
+	"context"
 	"reflect"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	cf "github.com/caerus-framework/caerus-framework"
 )
 
 func mustAdd[T any](t *testing.T, c *Configuration, src Source[T]) {
@@ -306,6 +310,48 @@ func TestParseFlagsSourcePathFlagOverridesFile(t *testing.T) {
 	}
 	if got := MustGet[flagSample](c, "app").Host; got != "override-file" {
 		t.Fatalf("Host after reload = %q, want the overridden path to persist", got)
+	}
+}
+
+func TestParseFlagsSourcePathFlagRemovesOldWatchDir(t *testing.T) {
+	c := New()
+	dir1 := t.TempDir()
+	dir2 := t.TempDir()
+	path1 := writeFile(t, dir1, "cfg.json", `{"host":"dir1","port":1}`)
+	path2 := writeFile(t, dir2, "override.json", `{"host":"dir2","port":2}`)
+	mustAdd(t, c, Source[flagSample]{
+		Name:   "app",
+		Path:   path1,
+		Format: FormatJSON,
+	})
+
+	if err := c.Init(context.Background(), cf.New()); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	t.Cleanup(func() { _ = c.Shutdown(context.Background()) })
+
+	oldDir := filepath.Dir(path1)
+	newDir := filepath.Dir(path2)
+	if got := c.watchedDirs[oldDir]; got != 1 {
+		t.Fatalf("watchedDirs[oldDir] = %d, want 1", got)
+	}
+	if got := c.watchedDirs[newDir]; got != 0 {
+		t.Fatalf("watchedDirs[newDir] = %d, want 0", got)
+	}
+
+	if _, err := c.ParseFlags([]string{"--app", path2}); err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+
+	if _, ok := c.watchedDirs[oldDir]; ok {
+		t.Fatalf("expected oldDir to be removed from watchedDirs, still present")
+	}
+	if got := c.watchedDirs[newDir]; got != 1 {
+		t.Fatalf("watchedDirs[newDir] = %d, want 1", got)
+	}
+
+	if got := MustGet[flagSample](c, "app").Host; got != "dir2" {
+		t.Fatalf("Host = %q, want override value", got)
 	}
 }
 
