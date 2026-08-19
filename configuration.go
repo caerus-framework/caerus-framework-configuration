@@ -454,43 +454,47 @@ func (c *Configuration) registerSource(s *source) error {
 	return nil
 }
 
-// Get returns the current value of the named source on the given component,
-// typed as *T. It reports false if the source does not exist or was registered
-// with a different type. The returned pointer is atomically swapped on reload:
-// readers always observe either the previous or the new value, never a partial
-// write.
-func Get[T any](c *Configuration, name string) (*T, bool) {
+// Get returns a snapshot copy of the current value of the named source,
+// typed as T. It reports false if the source does not exist or was registered
+// with a different type. Returning by value means the caller owns a stable
+// copy: it cannot accidentally mutate the live config, and the value does not
+// go stale when a reload swaps the internal pointer.
+func Get[T any](c *Configuration, name string) (T, bool) {
+	var zero T
 	if c == nil {
-		return nil, false
+		return zero, false
 	}
 	c.mu.Lock()
 	s := c.sources[name]
 	c.mu.Unlock()
 	if s == nil {
-		return nil, false
+		return zero, false
 	}
 	v, ok := s.value.Load().(*T)
-	return v, ok
+	if !ok || v == nil {
+		return zero, false
+	}
+	return *v, true
 }
 
-// Lookup returns the current value of the named source on the given component,
-// typed as *T, or an error if it does not exist or was registered with a
+// Lookup returns a snapshot copy of the current value of the named source,
+// typed as T, or an error if it does not exist or was registered with a
 // different type. Prefer Lookup (or Get) from Init and OnConfigReload so
 // misconfiguration surfaces as error rather than panic.
-func Lookup[T any](c *Configuration, name string) (*T, error) {
+func Lookup[T any](c *Configuration, name string) (T, error) {
 	v, ok := Get[T](c, name)
 	if !ok {
 		var zero T
-		return nil, fmt.Errorf("cf_configuration: no configuration source %q of type %T", name, zero)
+		return zero, fmt.Errorf("cf_configuration: no configuration source %q of type %T", name, zero)
 	}
 	return v, nil
 }
 
-// MustGet returns the current value of the named source on the given
-// component, typed as *T, or panics if it does not exist or was registered
-// with a different type. Prefer Lookup in Init/reload; MustGet is crash-fast
-// sugar for main and tests where a missing source is a programmer error.
-func MustGet[T any](c *Configuration, name string) *T {
+// MustGet returns a snapshot copy of the current value of the named source,
+// typed as T, or panics if it does not exist or was registered with a
+// different type. Prefer Lookup in Init/reload; MustGet is crash-fast sugar
+// for main and tests where a missing source is a programmer error.
+func MustGet[T any](c *Configuration, name string) T {
 	v, err := Lookup[T](c, name)
 	if err != nil {
 		panic(err.Error())
