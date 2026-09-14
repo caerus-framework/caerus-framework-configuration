@@ -97,11 +97,12 @@ if err := cf_configuration.AddSource(fwCfg, cf_configuration.Source[MongoConfig]
 
 ## Operational notes
 
-- **Startup**: the file must exist when `AddSource` runs (`Init` time).
-  `AddSource` fails fast, so a missing mount surfaces immediately instead of
-  starting with defaults. If the mount may legitimately be late, register the
-  source only after it is known to exist, or add an explicit readiness check
-  before `fw.Run`.
+- **Startup**: `AddSource` registers even when the construct Path is missing so
+  `--<name>` can point at the real mount. After `ParseFlags`, the resolved file
+  must exist (bad parse / validation still fail). Prefer matching mount and
+  construct Path when you can; path flags are the escape hatch for Helm.
+  If the mount may legitimately be late, register the source only after it is
+  known to exist, or add an explicit readiness check before `fw.Run`.
 - **File size**: each source file must be **1 MiB or smaller**
   (`MaxConfigFileBytes`). That is also the ConfigMap/Secret object size, so a
   normal mount already cannot exceed it. A bigger file (wrong `--<name>`

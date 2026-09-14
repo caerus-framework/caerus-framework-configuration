@@ -2,8 +2,9 @@ package cf_configuration
 
 import (
 	"context"
-	"reflect"
+	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -310,6 +311,40 @@ func TestParseFlagsSourcePathFlagOverridesFile(t *testing.T) {
 	}
 	if got := MustGet[flagSample](c, "app").Host; got != "override-file" {
 		t.Fatalf("Host after reload = %q, want the overridden path to persist", got)
+	}
+}
+
+func TestParseFlagsPathOverrideWhenDefaultMissing(t *testing.T) {
+	// Helm mounts configs away from construct Path; --<Name> must win even when
+	// the default file never existed (register-before-flags chicken-egg).
+	c := New()
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "default", "cfg.json")
+	mountDir := filepath.Join(dir, "mount")
+	if err := os.MkdirAll(mountDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	real := writeFile(t, mountDir, "cfg.json", `{"host":"from-mount","port":7}`)
+
+	if err := AddSource(c, Source[flagSample]{
+		Name: "app", Path: missing, Format: FormatJSON,
+	}); err != nil {
+		t.Fatalf("AddSource missing default: %v", err)
+	}
+	if _, ok := Get[flagSample](c, "app"); ok {
+		t.Fatal("value must stay unloaded until ParseFlags")
+	}
+
+	rest, err := c.ParseFlags([]string{"--app", real, "migrate"})
+	if err != nil {
+		t.Fatalf("ParseFlags: %v", err)
+	}
+	if len(rest) != 1 || rest[0] != "migrate" {
+		t.Fatalf("rest = %v, want [migrate]", rest)
+	}
+	got := MustGet[flagSample](c, "app")
+	if got.Host != "from-mount" || got.Port != 7 {
+		t.Fatalf("got %+v, want mount file after --app", got)
 	}
 }
 

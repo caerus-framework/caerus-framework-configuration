@@ -240,8 +240,14 @@ func (c *Configuration) Init(ctx context.Context, fw *cf.CaerusFramework) error 
 				c.logger.Warn("cf_configuration: cannot watch config source", "source", s.name, "path", s.path, "err", err)
 			}
 		}
+		cfg := s.value.Load()
+		if cfg == nil {
+			// Unloaded Path (missing at AddSource; ParseFlags should have
+			// loaded it). Skip nil notify — owners use Lookup / Init themselves.
+			continue
+		}
 		if rel := c.ownerReloader(s); rel != nil {
-			targets = append(targets, notifyTarget{rel: rel, name: s.name, cfg: s.value.Load()})
+			targets = append(targets, notifyTarget{rel: rel, name: s.name, cfg: cfg})
 		}
 	}
 	c.mu.Unlock()
@@ -288,9 +294,12 @@ func (c *Configuration) Shutdown(ctx context.Context) error {
 }
 
 // AddSource registers and loads a configuration source on the given component.
-// The value is built immediately (fail-fast); the source is not registered on
-// failure. Reloads never fail the process: a rejected reload keeps the previous
-// value. AddSource is safe to call before or after Init.
+// The value is built immediately when the Path exists (or the source is
+// fileless). A missing Path file is not a hard error: the source is registered
+// unloaded so ParseFlags can apply a --<Name> path override and load. Bad
+// parse, oversized file, and Validate failures still fail fast and do not
+// register. Reloads never fail the process: a rejected reload keeps the
+// previous value. AddSource is safe to call before or after Init.
 //
 // Path and/or EnvPrefix must be set. Format is required when Path is set.
 func AddSource[T any](c *Configuration, src Source[T]) error {
@@ -415,17 +424,25 @@ func (c *Configuration) AddSourceValue(src cf.ConfigSourceValue) error {
 	return c.registerSource(s)
 }
 
-// registerSource runs the shared AddSource tail: fail-fast initial load, source
+// registerSource runs the shared AddSource tail: initial load, source
 // registration, watcher attach, and owner notify (when the component is already
 // initialized). Callers must build a fully populated *source first.
+//
+// A missing Path file registers the source unloaded (value nil). The framework
+// always runs ParseFlags after the registrar pass; --<Name> may point at the
+// real mount before the first successful load. Other load errors fail fast and
+// leave the source unregistered.
 func (c *Configuration) registerSource(s *source) error {
-	// Initial load: fail-fast. The flag overlay is a process-start snapshot
-	// (empty unless ParseFlags already ran — register sources before parsing).
+	// Initial load. Flag overlay is empty unless ParseFlags already ran
+	// (register sources before parsing).
 	c.mu.Lock()
 	flags := c.flagValues
 	c.mu.Unlock()
 	if _, err := loadSource(s, true, flags); err != nil {
-		return fmt.Errorf("cf_configuration: source %q: %w", s.name, err)
+		if !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("cf_configuration: source %q: %w", s.name, err)
+		}
+		// Leave s.value nil; ParseFlags / Reload will load (or fail).
 	}
 
 	c.mu.Lock()
@@ -442,15 +459,17 @@ func (c *Configuration) registerSource(s *source) error {
 		}
 	}
 	var rel cf.ConfigReloader
-	if c.fw != nil {
+	cfg := s.value.Load()
+	if c.fw != nil && cfg != nil {
 		rel = c.ownerReloader(s)
 	}
 	c.mu.Unlock()
 
 	// A source registered after configuration initialized notifies its owner
 	// immediately so core components (logs) that cannot Lookup still apply it.
+	// Skip when still unloaded (missing Path pending --<Name>).
 	if rel != nil {
-		rel.OnConfigReload(s.name, s.value.Load())
+		rel.OnConfigReload(s.name, cfg)
 	}
 	return nil
 }

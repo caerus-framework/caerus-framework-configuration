@@ -277,9 +277,14 @@ Contract:
 - **Per-source file-path flags:** every source with a `Path` also gets a
   `--<Name>` flag (default = its `Path`). Providing it overrides where that
   source's file is read from — the file location is itself a per-source option.
-  There is no "config directory" bootstrap setting; each source declares its own
-  file, env and arg options. That override is **trusted** the same way
-  `Source.Path` is (see “Trusted paths” below).
+  **Important:** `AddSource` runs before `ParseFlags`. If the construct-time
+  Path does not exist yet, the source is registered **unloaded**; `ParseFlags`
+  applies `--<Name>` (if any) and then loads. That is what lets Helm mount
+  files at `/etc/...` while `main` still declares `config/postgresql.json` or
+  `.config/postgresql.json`. A path that is still missing after `ParseFlags`
+  fails there. There is no "config directory" bootstrap setting; each source
+  declares its own file, env and arg options. That override is **trusted** the
+  same way `Source.Path` is (see “Trusted paths” below).
 - **Unknown flags and positional args survive:** the first unknown flag,
   single-dash arg, positional arg, or `--` terminator moves the rest of the
   command line to the returned `rest` untouched — so `serve` / `migrate` /
@@ -359,7 +364,8 @@ Implements `caerusframework.CaerusComponent`:
 
 | Situation | Behaviour |
 |---|---|
-| Initial load failure (missing file, oversized file, bad parse, validation error) | `AddSource` returns an error; source not registered; startup continues to fail via the caller |
+| Initial load: missing Path file | Source registered unloaded; `ParseFlags` (after optional `--<Name>`) loads or fails |
+| Initial load: oversized file, bad parse, validation error | `AddSource` returns an error; source not registered; startup fails via the caller |
 | Valid change detected | New value swapped in atomically; owner `OnConfigReload(source, cfg)` called |
 | Malformed content on reload | Rejected; previous value kept; error logged |
 | File larger than 1 MiB on reload | Rejected; previous value kept; error logged |

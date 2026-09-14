@@ -194,7 +194,13 @@ func (c *Configuration) flagNamesLocked() (map[string]reflect.Kind, error) {
 // a Path, parses args, and re-applies the resulting values across all sources
 // (flags win over env; env wins over file). The file-path flags override where
 // each source's config file is read from; defaults are the sources' current
-// paths, so an absent flag is a no-op.
+// paths, so an absent flag is a no-op when the construct Path already loaded.
+//
+// If AddSource saw a missing Path file, the source is registered unloaded and
+// ParseFlags must load it (after optional --<Name> override). A still-missing
+// file fails here. The framework runs registrars then ParseFlags at process
+// start, so Helm can mount files away from the construct Path and pass
+// --postgresql /etc/... without requiring the default Path to exist first.
 //
 // Flags are a process-start overlay: the parsed field map is kept and re-applied
 // on every subsequent Reload / ReloadAll; a path override persists on the
@@ -252,7 +258,18 @@ func (c *Configuration) ParseFlags(args []string) (rest []string, err error) {
 	fs.Visit(func(f *flag.Flag) {
 		values[f.Name] = f.Value.String()
 	})
-	if len(values) == 0 {
+	// Sources whose Path was missing at AddSource are registered with a nil
+	// value. Even with no argv flags we must reload so that case fails here
+	// (or succeeds if the file appeared). Path overrides below still run when
+	// --<Name> is present.
+	pendingLoad := false
+	for _, s := range c.sources {
+		if s != nil && s.value.Load() == nil {
+			pendingLoad = true
+			break
+		}
+	}
+	if len(values) == 0 && !pendingLoad {
 		c.mu.Unlock()
 		return rest, nil
 	}

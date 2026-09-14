@@ -216,13 +216,17 @@ func TestAddSourceFailFast(t *testing.T) {
 	dir := t.TempDir()
 
 	c := New()
-	// Missing file.
-	err := AddSource(c, Source[mongoConfig]{Name: "missing", Path: filepath.Join(dir, "nope.json"), Format: FormatJSON})
-	if err == nil || !strings.Contains(err.Error(), "missing") {
-		t.Fatalf("expected error for missing file, got %v", err)
+	// Missing file: register unloaded so ParseFlags can apply --<Name>.
+	missingPath := filepath.Join(dir, "nope.json")
+	err := AddSource(c, Source[mongoConfig]{Name: "missing", Path: missingPath, Format: FormatJSON})
+	if err != nil {
+		t.Fatalf("missing Path should register unloaded, got %v", err)
 	}
 	if _, ok := Get[mongoConfig](c, "missing"); ok {
-		t.Fatal("failed source must not be registered")
+		t.Fatal("unloaded source must not expose a value yet")
+	}
+	if _, err := c.ParseFlags(nil); err == nil || !strings.Contains(err.Error(), "nope.json") {
+		t.Fatalf("ParseFlags with still-missing Path should fail, got %v", err)
 	}
 
 	// Malformed content.
