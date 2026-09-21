@@ -46,8 +46,8 @@ positional args are returned so subcommands survive. Values are swapped
   explicit value (non-zero code defaults, meaningful zero, reload presence).
   Env/flag overlays allocate pointer fields on first set; omitted keys stay
   `nil`. Do not pointer-wrap every setting for uniformity.
-- **AfterLoad**: hook for DSN/URL overlays (e.g. `POSTGRES_DSN`, `VALKEY_URL`)
-  before Validate.
+- **AfterLoad**: hook for DSN/URL **merge** (`POSTGRES_DSN`, `VALKEY_URL`)
+  before Validate. Do not `os.Getenv` keys that already have `env` tags.
 - **Validated hot-reload**: `fsnotify` watches the file's directory. On change
   the file is re-read, env/AfterLoad reapplied, re-validated, then swapped.
 - **Forced reload**: `Reload(name)` / `ReloadAll()` re-apply env+AfterLoad even
@@ -91,6 +91,25 @@ Right: slog.Info("reload", "host", cfg.Host, SecretPresence(cfg)...)
 `password_set=false` and do not print `[redacted]`. Nested structs are
 not walked (same limit as env overlay). First consumers: postgresql
 `password`, valkey `password`, resend `api_key`.
+
+```text
+Wrong:  type Cfg struct {
+            Auth struct {
+                Password string `json:"password" secret:"redact"`
+            } `json:"auth"`
+        }
+        slog.Info("reload", LogArgs(cfg)...)
+        → LogArgs skips the nested struct. The password is not redacted
+          here and is not listed. slog.Any(cfg) still dumps it.
+
+Right:  type Cfg struct {
+            Password string `json:"password" env:"PASSWORD" secret:"redact"`
+        }
+        slog.Info("reload", LogArgs(cfg)...)
+```
+
+Keep secret fields **flat** on the config struct. Flattening is the rule;
+walking nested structs is not a follow-up this module promises.
 
 Do not log overlay parse errors at Info with file bytes. Reload failures
 stay at Error with the parse error (JSON/YAML messages, not a dump of the
@@ -168,6 +187,10 @@ _ = cf_configuration.AddSource(cfg, cf_configuration.Source[cf_postgres.Postgres
 	EnvPrefix: "POSTGRES_",
 	Job:       cf.JobSpec{Flag: "postgresql.job", Tasks: []string{"migrate"}},
 	AfterLoad: func(c *cf_postgres.PostgresConfig) error {
+		// DSN merge only. POSTGRES_DSN is not a tagged field on PostgresConfig.
+		// OverlayDSN fills Host/Password/… from the URL. Do not os.Getenv
+		// POSTGRES_HOST or POSTGRES_PASSWORD — those already have env tags
+		// and were applied in the env overlay above.
 		if dsn := os.Getenv("POSTGRES_DSN"); dsn != "" {
 			return cf_postgres.OverlayDSN(c, dsn)
 		}
@@ -175,6 +198,15 @@ _ = cf_configuration.AddSource(cfg, cf_configuration.Source[cf_postgres.Postgres
 	},
 	Validate: func(v *cf_postgres.PostgresConfig) error { /* … */ return nil },
 })
+```
+
+```text
+Wrong: AfterLoad calls os.Getenv("POSTGRES_HOST") or os.Getenv("PASSWORD").
+       Those keys already have env tags; the overlay already applied them.
+       A second Getenv bypasses the source and drifts from the file.
+
+Right: AfterLoad only merges a URL that is not a tagged field
+       (POSTGRES_DSN → OverlayDSN, VALKEY_URL → OverlayURL).
 ```
 
 `Validate` must return an error message that names the field and the
@@ -326,8 +358,11 @@ file present:
 
 Recommended patterns:
 
-1. **Kubernetes (preferred):** put rotating secrets in **mounted files**; do not
-   rely on env for rotation. File watch is the signal.
+1. **Kubernetes Path B (preferred):** put rotating chassis credentials in
+   **mounted files** (External Secrets / Secret volume). File watch is the
+   signal. See [docs/K8S.md](docs/K8S.md) → Secrets. Path A
+   (`caerus-framework-secrets` `Get`) is live fetch in the same process if
+   you need it; it does not replace this watch.
 2. **Explicit refresh:** call `cfg.Reload("postgresql")` from a SIGHUP handler,
    admin endpoint, or after a known env update in tests.
 3. **Do not poll** the environment in a tight loop.

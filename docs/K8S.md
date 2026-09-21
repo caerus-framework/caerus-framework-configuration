@@ -48,14 +48,81 @@ validated, and swapped atomically.
 
 ## Secrets
 
-- **Prefer the `secrets` bootstrap stage for credentials.** The configuration
-  component handles non-secret configuration and reload semantics. Keep
-  passwords/tokens/mTLS material in a `caerus-framework-secrets`-style
-  component (planned) backed by the `SecretsStage`, reading from mounted Secret
-  volumes or a KMS.
-- If a Secret value must live in a config file, mount it as a volume and point
-  a source at it — the same symlink-swap handling applies. Never bake secrets
-  into ConfigMaps or into the image.
+Credentials on Kubernetes have **two named paths**. They are not the same
+mechanism. Prefer Path B for chassis files (postgres, valkey, HTTP bind
+config). Path A is live fetch. One app can use **both** (see Mixed).
+
+Never put credentials in a ConfigMap or in the image.
+
+### Path B — ESO mounted file (preferred / golden)
+
+**What it is.** External Secrets (or a native Secret) writes a file on
+the volume. This module’s source `Path` points at that file. A symlink
+swap is rotation: watch → re-stat → hash → validate → `OnConfigReload`.
+The process does not call Vault.
+
+**Who / what.** Operator + ESO own the mount. Configuration owns reload.
+The chassis component (`cf_postgres`, …) is `Source.Owner` and rebuilds
+its client from the new value.
+
+**Use when.** The secret is part of a typed config blob (`password` on
+`PostgresConfig`, `api_key` on mail). That is the ops-oriented golden
+path: files are the Kubernetes rotation plane.
+
+```yaml
+# Secret (or ExternalSecret targeting a Secret) mounted next to ConfigMaps
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          volumeMounts:
+            - name: app-config
+              mountPath: /etc/caerus
+              readOnly: true
+      volumes:
+        - name: app-config
+          projected:
+            sources:
+              - configMap:
+                  name: app-config   # host, port, non-secret settings
+              - secret:
+                  name: app-db       # postgresql.json with password
+```
+
+Point the source at the mounted file (`/etc/caerus/postgresql.json`).
+Tag the password `secret:"redact"` so reload logs use `LogArgs`, not
+`slog.Any`.
+
+### Path A — in-process Get (`caerus-framework-secrets`)
+
+**What it is.** The published
+[`caerus-framework-secrets`](https://github.com/caerus-framework/caerus-framework-secrets)
+component. `main` `AddComponent`s it. Callers store the **component
+pointer** and call `Get` / `GetString` per use (Vault, OpenBao, AWS,
+GCP, or that module’s file driver). Kind stays in *that* module’s
+config. Rotation is a later `Get`, not this module’s `fsnotify`.
+
+**What it is not.** Core `SecretsStage` is a reserved empty slot. Do not
+wait for a bootstrap secrets component inside `caerus-framework`. The
+public module is the thing you register.
+
+**Use when.** The app needs a live fetch (short-lived token, many keys,
+a backend that is not “one JSON file per chassis source”).
+
+### Mixed in one app
+
+Path B and Path A can run in the **same process**. Typical split:
+
+- **Path B:** postgres / valkey / HTTP settings — ESO file → this
+  module → chassis `OnConfigReload`.
+- **Path A:** a third-party API token or mTLS material the app fetches
+  through `cf_secrets.Get`.
+
+Do not put the Vault token into `postgresql.json`, and do not `Get` the
+postgres password from Vault if that password already rotates as a
+mounted file. Two planes, two owners; mixing *inside one credential*
+(file *and* Vault for the same password) is how juniors lose the plot.
 
 ## Recommended deployment
 
@@ -108,6 +175,8 @@ if err := cf_configuration.AddSource(fwCfg, cf_configuration.Source[MongoConfig]
   normal mount already cannot exceed it. A bigger file (wrong `--<name>`
   path, a log dump bind-mounted over the config) fails the load; a reload
   keeps last-good. The cap is the file on disk, not YAML decode memory.
+  Prefer **JSON** in production mounts. YAML can expand in RAM beyond the
+  1 MiB on-disk cap; this module does not budget decode memory.
 - **Trusted path**: `Path` and `--<name>` are operator / Pod-spec input.
   The process will open any file that uid can read (Unix DAC). There is no
   directory allowlist. Production is a **mounted** file under a directory
