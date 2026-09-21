@@ -66,3 +66,28 @@ func TestLogArgsEmptySecret(t *testing.T) {
 		t.Fatalf("want password_set=false: %s", out)
 	}
 }
+
+type nestedSecretSample struct {
+	Host string `json:"host"`
+	Auth struct {
+		Password string `json:"password" secret:"redact"`
+	} `json:"auth"`
+}
+
+func TestLogArgsSkipsNestedSecret(t *testing.T) {
+	cfg := nestedSecretSample{Host: "db.example"}
+	cfg.Auth.Password = "nested-s3cret"
+	var buf bytes.Buffer
+	l := slog.New(slog.NewTextHandler(&buf, nil))
+	l.Info("summary", LogArgs(cfg)...)
+	out := buf.String()
+	if strings.Contains(out, "nested-s3cret") {
+		t.Fatalf("nested cleartext must not appear (field is skipped, not dumped): %s", out)
+	}
+	if strings.Contains(out, "password_set") {
+		t.Fatalf("nested secret must not be walked: %s", out)
+	}
+	if !strings.Contains(out, "host=db.example") {
+		t.Fatalf("top-level unmarked field should stay visible: %s", out)
+	}
+}
